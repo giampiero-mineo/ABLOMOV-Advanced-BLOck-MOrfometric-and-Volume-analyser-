@@ -1,0 +1,357 @@
+# ==============================================================================
+# Disclaimer
+# Copyright (C) 2025 Giampiero Mineo
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see https://www.gnu.org/licenses/gpl-3.0.html
+# ==============================================================================
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import trimesh
+import os
+from typing import Tuple, Optional, List, Dict, Any
+
+# Import custom data types
+from data_structures import MorpResult, CustomVolumeClasses
+
+# ==============================================================================
+# 1. Triangular Diagram Plotter Class
+# ==============================================================================
+
+class TriangularDiagramPlotter:
+    """Handles the plotting of morphometric data on a triangular diagram."""
+    def __init__(self):
+        # Base length and height for the normalized triangle (e.g., 100 units)
+        self.base_length = 100.0
+        self.height = (np.sqrt(3) / 2) * self.base_length
+        self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        self.morp_results: List[MorpResult] = []
+        self.custom_volume_classes: CustomVolumeClasses = None
+    
+    def set_volume_classes(self, custom_classes: CustomVolumeClasses):
+        """Sets custom volume classification limits if available."""
+        self.custom_volume_classes = custom_classes
+
+    def _map_beta_to_y(self, beta_val: float) -> float:
+        """Maps Beta (1-10) to the Y-coordinate (height) of the triangle."""
+        # Beta is linearly mapped from 1 to 10
+        beta_clamped = np.clip(beta_val, 1, 10)
+        return ((beta_clamped - 1) / 9.0) * self.height
+        
+    def _map_alpha_f_to_x_base(self, alpha_f_val: float) -> float:
+        """Maps Alpha-F (1-10) to the X-coordinate at the base of the triangle."""
+        # Alpha*Flattening (Alpha-F) is typically log-mapped on the base
+        alpha_f_clamped = np.clip(alpha_f_val, 1, 10)
+        # Logarithmic scale (0 to 1) for the base
+        log_alpha_f_norm = (np.log10(alpha_f_clamped) if alpha_f_clamped > 0 else 0)
+        # Map to the base length: range is -L/2 to L/2
+        x_base = (log_alpha_f_norm - 0.5) * self.base_length 
+        return x_base
+    
+    def map_coords(self, alpha_f_val: float, beta_val: float) -> Tuple[float, float]:
+        """Maps Alpha-F and Beta values to plot coordinates (X, Y)."""
+        y_coord = self._map_beta_to_y(beta_val)
+        x_base_coord = self._map_alpha_f_to_x_base(alpha_f_val)
+        
+        # Scaling factor based on Y-coordinate (distance from the apex)
+        scale_factor = (self.height - y_coord) / self.height
+        x_coord = x_base_coord * scale_factor
+        
+        return x_coord, y_coord
+
+    # --- Plotting Methods ---
+    def plot_data(self, morp_results_data: List[MorpResult], with_volume: bool = True):
+        """
+        Plots the morphometric data.
+
+        Args:
+            morp_results_data: List of morphometric results.
+            with_volume: If True, uses point size to represent Volume.
+        """
+        self.morp_results = morp_results_data
+        self._plot_triangular_diagram(with_volume)
+        plt.show() 
+
+    def _plot_triangular_diagram(self, with_volume: bool):
+        self.ax.clear()
+        
+        # 1. Draw triangular diagram boundaries
+        # Vertices: bottom-left, bottom-right, top-center
+        triangle_vertices = np.array([[-self.base_length / 2, 0], 
+                                      [self.base_length / 2, 0], 
+                                      [0, self.height]])
+        self.ax.add_patch(plt.Polygon(triangle_vertices, closed=True, 
+                                      edgecolor='black', fill=False, linewidth=1.5))
+        
+        # 2. Define and plot morphometric regions (Cubic, Platy, Elongated, etc.)
+        # Coordinates are (Alpha-F, Beta)
+        region_defs = {
+            "Cubic (C)": [(1,1), (2,1), (2,4), (1,4)],
+            "Platy-Cubic (PC)": [(2,1), (4,1), (4,4), (2,4)],
+            "Platy (P)": [(4,1), (10,1), (10,4), (4,4)],
+            "Cubic-Elongated (CE)": [(1,4), (3,4), (3,7), (1,7)],
+            "Elongated-Platy (EP)": [(3,4), (10,4), (10,7), (3,7)],
+            "Elongated (E)": [(1,7), (10,7), (10,10), (1,10)]
+        }
+        for _, corners in region_defs.items():
+            poly_pts = [self.map_coords(a, b) for (a, b) in corners]
+            self.ax.add_patch(plt.Polygon(poly_pts, closed=True, edgecolor='black', 
+                                          facecolor='none', linewidth=1.0, alpha=1.0, zorder=0))
+        
+        # 3. Grid lines and labels for Beta (Y axis)
+        beta_label_offset_x = -2
+        for beta_val in range(1, 11):
+            y_plot = self._map_beta_to_y(float(beta_val))
+            # Calculate the line boundaries (tapered)
+            x_boundary = (self.base_length / 2) * (1 - y_plot / self.height)
+            self.ax.plot([-x_boundary, x_boundary], [y_plot, y_plot], 'k--', linewidth=0.5, alpha=0.6)
+            self.ax.text(-x_boundary + beta_label_offset_x, y_plot, str(beta_val), 
+                         va='center', ha='right', fontsize=10)
+            
+        # 4. Grid lines and labels for Alpha-F (X axis)
+        alpha_f_label_offset_y = -2
+        for alpha_f_val in range(1, 11):
+            x_base_alpha_f, _ = self.map_coords(float(alpha_f_val), 1.0)
+            x_apex_alpha_f, _ = self.map_coords(float(alpha_f_val), 10.0)
+            y_base_alpha_f = self._map_beta_to_y(1.0)
+            y_apex_alpha_f = self._map_beta_to_y(10.0)
+            self.ax.plot([x_base_alpha_f, x_apex_alpha_f], [y_base_alpha_f, y_apex_alpha_f], 
+                         'k--', linewidth=0.5, alpha=0.6)
+            self.ax.text(x_base_alpha_f, alpha_f_label_offset_y, str(alpha_f_val), 
+                         ha='center', va='top', fontsize=10)
+            
+        # 5. Final display settings
+        self.ax.set_xlabel(r'$\alpha_{F}$', fontsize=14, labelpad=10)
+        self.ax.set_ylabel(r'$\beta$', rotation=0, labelpad=-35, fontsize=14)
+        self.ax.set_xlim(-self.base_length/2 - 1, self.base_length/2 + 1)
+        self.ax.set_ylim(-1, self.height + 1)
+        self.ax.set_aspect('equal', adjustable='box')
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        for spine in self.ax.spines.values():
+            spine.set_visible(False)
+
+        # 6. Data point plot
+        if self.morp_results:
+            x_coords, y_coords, scatter_sizes = [], [], []
+            labels = []
+            
+            # Point size mapping for volume classes
+            point_sizes_map = {'size_1': 25, 'size_2': 75, 'size_3': 150, 'size_4': 200, 'size_5': 300}
+            
+            # Get valid volumes for percentile calculation
+            volumes_valid = [d[5] for d in self.morp_results if d[5] is not None and d[5] > 0]
+            
+            if with_volume and volumes_valid:
+                
+                # Determine classification thresholds
+                if self.custom_volume_classes:
+                    class_volumes = self.custom_volume_classes['volumes']
+                else:
+                    # Standard percentiles for volume (50, 75, 90, 95)
+                    percentile_values = np.percentile(volumes_valid, [50, 75, 90, 95])
+                
+                legend_handles = []
+                
+                for entry in self.morp_results:
+                    original_file_index, name, alpha, beta, flattening, volume, _ = entry
+                    
+                    if alpha is not None and beta is not None and flattening is not None:
+                        alpha_f = alpha * flattening
+                        x, y = self.map_coords(alpha_f, beta)
+                        x_coords.append(x)
+                        y_coords.append(y)
+                        labels.append(str(original_file_index + 1))
+                        
+                        size = point_sizes_map['size_1'] # Default
+                        
+                        if volume is not None and volume > 0:
+                            if self.custom_volume_classes:
+                                # Custom class logic
+                                thresholds = class_volumes
+                            else:
+                                # Standard class logic (using percentiles)
+                                thresholds = percentile_values
+                            
+                            # Assign size based on thresholds
+                            if volume < thresholds[0]: size = point_sizes_map['size_1']
+                            elif volume < thresholds[1]: size = point_sizes_map['size_2']
+                            elif volume < thresholds[2]: size = point_sizes_map['size_3']
+                            elif volume < thresholds[3]: size = point_sizes_map['size_4']
+                            else: size = point_sizes_map['size_5']
+                                     
+                        scatter_sizes.append(size)
+                
+                # Scatter plot with variable size for volume
+                self.ax.scatter(x_coords, y_coords, s=scatter_sizes, facecolor='none', edgecolor='black', zorder=5)
+                
+                # Annotations
+                for i, label in enumerate(labels):
+                    self.ax.annotate(label, (x_coords[i], y_coords[i]), textcoords="offset points", xytext=(0,10), ha='center')
+
+                # Creating the legend for volume classes
+                if self.custom_volume_classes:
+                    class_limits = self.custom_volume_classes['limits']
+                    class_labels = [
+                        f"Vol. < {class_limits[0]:.0f}%", 
+                        f"Vol. {class_limits[0]:.0f}-{class_limits[1]:.0f}%", 
+                        f"Vol. {class_limits[1]:.0f}-{class_limits[2]:.0f}%", 
+                        f"Vol. {class_limits[2]:.0f}-{class_limits[3]:.0f}%", 
+                        f"Vol. > {class_limits[3]:.0f}%"
+                    ]
+                else:
+                    class_order = ['<50%', '50-75%', '75-90%', '90-95%', '>95%']
+                    class_labels = [f'Vol. {cls}' for cls in class_order]
+
+                sizes_list = list(point_sizes_map.values())
+                for i, label in enumerate(class_labels):
+                    # Marker size is square root of scatter size for visual consistency
+                    handle = mlines.Line2D([], [], marker='o', linestyle='None',
+                                           markersize=np.sqrt(sizes_list[i]), markerfacecolor='none',
+                                           markeredgecolor='black', label=label)
+                    legend_handles.append(handle)
+                            
+                self.ax.legend(handles=legend_handles, title='Volume Classes', loc='upper left', bbox_to_anchor=(1, 1))
+
+            else:
+                # Scatter plot without volume (fixed size)
+                for entry in self.morp_results:
+                    original_file_index, name, alpha, beta, flattening, _, _ = entry
+                    if alpha is not None and beta is not None and flattening is not None:
+                        alpha_f = alpha * flattening
+                        x, y = self.map_coords(alpha_f, beta)
+                        x_coords.append(x)
+                        y_coords.append(y)
+                        labels.append(str(original_file_index + 1))
+                            
+                self.ax.scatter(x_coords, y_coords, facecolor='none', edgecolor='black', s=100, zorder=5) 
+                for i, label in enumerate(labels):
+                    self.ax.annotate(label, (x_coords[i], y_coords[i]), textcoords="offset points", xytext=(0,10), ha='center')
+
+    def save_plot_as_png(self, file_path: str):
+        """Save the triangular diagram as a PNG file."""
+        self.fig.savefig(file_path, dpi=300, bbox_inches='tight')
+
+# ==============================================================================
+# 2. Data Export 
+# ==============================================================================
+
+def export_hull_excel(hull_results: List[Tuple[int, str, float, float, Any]], path: str):
+    """Exports Convex Hull results to an Excel file."""
+    df_data = []
+    for i, entry in enumerate(hull_results, 1):
+        # entry[0] = original_index, entry[1] = name, entry[2] = volume, entry[3] = area
+        df_data.append((i, entry[1], entry[2], entry[3]))
+    
+    df = pd.DataFrame(df_data, columns=["ID", "Name", "Hull Volume", "Hull Surface Area"])
+    df.iloc[:, 2:] = df.iloc[:, 2:].round(3)
+    df.to_excel(path, index=False)
+    print(f"Convex Hull file saved: {path}")
+
+def export_morp_excel(morp_results: List[MorpResult], path: str):
+    """Exports morphometric indices results to an Excel file."""
+    df_data = []
+    for entry in morp_results:
+        original_id = entry[0] + 1
+        # entry[2] = Alpha, entry[3] = Beta, entry[4] = Flattening, entry[5] = Volume, entry[6] = Area
+        df_data.append((original_id, entry[1], entry[2], entry[3], entry[4], entry[5], entry[6]))
+            
+    df = pd.DataFrame(df_data, columns=["ID", "Name", "Alpha", "Beta", "Flattening", "Volume", "Surface Area"])
+    df.iloc[:, 2:] = df.iloc[:, 2:].round(3)
+    df.to_excel(path, index=False)
+    print(f"Morphometric indices file saved: {path}")
+
+# ==============================================================================
+# 3. Other Plot/Export Functions
+# ==============================================================================
+
+def save_mesh_obj(mesh: Optional[trimesh.Trimesh], export_dir: str, original_name: str) -> Optional[str]:
+    """Saves the Convex Hull mesh as an OBJ file."""
+    if not mesh:
+        return None
+    
+    base_name, _ = os.path.splitext(original_name)
+    filename = f"{base_name}_hull.obj"
+    file_path = os.path.join(export_dir, filename)
+    
+    try:
+        mesh.export(file_path)
+        return file_path
+    except Exception as e:
+        print(f"Error exporting {filename}: {e}")
+        return None
+
+def show_cumulative_volume_curve(hull_results: List[Tuple[int, str, float, float, Any]]):
+    """Displays the cumulative volume distribution curve."""
+    volumes = sorted([res[2] for res in hull_results if res[2] is not None and res[2] > 0])
+    
+    if not volumes:
+        print("Error: No valid volume (> 0) found for logarithmic calculation.")
+        return
+
+    cumulative_percentages = np.arange(1, len(volumes) + 1) / len(volumes) * 100
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.plot(volumes, cumulative_percentages, color='black', marker='o', linestyle='-', markersize=4)
+
+    # Logarithmic X-axis setting for better visualization of scale range
+    ax.set_xscale("log")
+    
+    ax.set_xlabel(r"Volume (m$^3$)", fontsize=12)
+    ax.set_ylabel("Cumulative Frequency (%)", fontsize=12)
+    ax.grid(True, which="both", linestyle='--')
+    
+    ax.set_title("3D Block Size Distribution")
+    plt.show()
+
+def calculate_cumulative_volume_classes(hull_results: List[Tuple[int, str, float, float, Any]], percentages: List[float]) -> CustomVolumeClasses:
+    """
+    Calculates volume limits based on cumulative *total volume* percentages.
+
+    Args:
+        hull_results: Convex Hull results.
+        percentages: List of cumulative percentages to use as limits (e.g., [25, 50, 75]).
+
+    Returns:
+        Dictionary with limits in volume and percentage, or None on error.
+    """
+    volumes = sorted([res[2] for res in hull_results if res[2] is not None and res[2] > 0])
+    
+    if not volumes:
+        print("Error: No valid volume found.")
+        return None
+    
+    volumes = np.array(volumes)
+    total_volume = volumes.sum()
+    cumulative_volumes = np.cumsum(volumes)
+    cumulative_percentages = (cumulative_volumes / total_volume) * 100
+    
+    try:
+        # Filter for valid percentages (0 < p < 100)
+        custom_percentages = sorted([p for p in percentages if 0 < p < 100])
+        if not custom_percentages:
+             print("Error: No valid percentage (0 < p < 100) entered.")
+             return None
+             
+        # Interpolate to find the *cumulative volume* corresponding to the cumulative *percentage*
+        # Note: This interpolation is correct for finding the volume at the percentile of the TOTAL volume.
+        class_volumes = np.interp(custom_percentages, cumulative_percentages, cumulative_volumes)
+        
+        return {'limits': custom_percentages, 'volumes': class_volumes}
+    
+    except Exception as e:
+        print(f"Error calculating volume classes: {e}")
+        return None
