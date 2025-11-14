@@ -1,0 +1,48 @@
+# ==============================================================================
+# Disclaimer
+# Copyright (C) 2025 Giampiero Mineo
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see https://www.gnu.org/licenses/gpl-3.0.html
+# ==============================================================================
+
+import numpy as np
+import trimesh
+from typing import Tuple, Optional, List, Dict, Any
+
+# ==============================================================================
+# 1. Type Hinting Definitions
+# ==============================================================================
+# Tuple[original_index, file_name, Volume, Area, Mesh_Trimesh]
+HullResult = Tuple[int, str, float, float, Optional[trimesh.Trimesh]]
+
+# Tuple[original_index, file_name, Alpha, Beta, Flattening, Volume, Area]
+MorpResult = Tuple[int, str, Optional[float], Optional[float], Optional[float], 
+                   Optional[float], Optional[float]]
+
+# Dictionary for custom volume classes (e.g., {'limits': [25, 50, 75], 'volumes': [v1, v2, v3]})
+CustomVolumeClasses = Optional[Dict[str, Any]]
+
+# ==============================================================================
+# 2. Global Variables and Constants
+# ==============================================================================
+
+# Maximum number of vertices to be sampled for calculating the chords (Beta/Alpha-F)
+MAX_VERTICES_FOR_CHORD_CALC = 25000 
+
+# Data storage lists
+point_clouds: List[np.ndarray] = []
+point_cloud_names: List[str] = []
+hull_results: List[HullResult] = []
+meshes: List[Optional[trimesh.Trimesh]] = []
+morp_results: List[MorpResult] = []
+custom_volume_classes: CustomVolumeClasses = None
