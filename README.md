@@ -24,10 +24,6 @@ Technical Requirements and Execution
 The project requires Python 3.8+ and dependencies listed in requirements.txt (numpy, scipy, trimesh, laspy, pandas, matplotlib).
 To run the analysis:Place input files (.las, .obj, .txt) in the designated input directory.Execute the main orchestration script: python main.py.The final processed data and visualizations are saved to the specified output directory.
 
-Reference
-Mineo G., Riquelme A., Rosone M., Cappadonia C. 
-Integrating 3D Point Cloud analysis for unstable rock blocks characterization: a method for assessing size and shape distribution
-
 Input Data Requirements
 Point Clouds in .txt, .obj or .las format
 
@@ -51,6 +47,9 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+Reference
+Kindly ensure the source is properly cited: Mineo, G., Riquelme, A., Rosone, M., Cappadonia, C., 2026. Integrating 3D Point Cloud analysis for potentially unstable rock blocks characterization: a method for assessing size and shape distribution. International Journal of Rock Mechanics and Mining Sciences 201, 106477. https://doi.org/10.1016/j.ijrmms.2026.106477
 
 Contact
 Giampiero Mineo
